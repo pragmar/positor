@@ -29,8 +29,8 @@ setup(
     },
     install_requires=[
       "colorama>=0.4.0", 
-      "ffprobe-python>=1.0.0"
-      "whisper=1.0.0"
+      "ffprobe-python>=1.0.0",
+      "whisper.ai>=1.0.0"
     ],
     include_package_data=False
 )
