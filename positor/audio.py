@@ -1,6 +1,6 @@
 import warnings
 from copy import deepcopy
-from typing import Union
+from typing import Union, Tuple
 import ffmpeg
 import numpy as np
 import torch
@@ -88,7 +88,7 @@ def remove_lower_quantile(waveform_img: np.ndarray,
 
 
 def wave_to_ts_filter(waveform_img: np.ndarray, suppress_middle=True,
-                      max_index: (list, int) = None) -> np.ndarray:
+                      max_index: Tuple[list, int] = None) -> np.ndarray:
     """
     Returns A NumPy array mask of sections with amplitude zero
     """

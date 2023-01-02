@@ -1,7 +1,7 @@
 import json
 import os
-from typing import List
-from stable_whisper.stabilization import group_word_timestamps, tighten_timestamps, MIN_DUR
+from typing import List, Tuple
+from .stabilization import group_word_timestamps, tighten_timestamps, MIN_DUR
 
 __all__ = ['results_to_sentence_srt', 'results_to_word_srt', 'results_to_token_srt',
            'results_to_sentence_word_ass', 'to_srt', 'results_to_srt', 'save_as_json']
@@ -13,7 +13,7 @@ def to_srt(lines: List[dict], save_path: str = None, strip=False) -> str:
         [{start:<start-timestamp-of-text>, end:<end-timestamp-of-text>, text:<str-of-text>}, ...]
     """
 
-    def secs_to_hhmmss(secs: (float, int)):
+    def secs_to_hhmmss(secs: Tuple[float, int]):
         mm, ss = divmod(secs, 60)
         hh, mm = divmod(mm, 60)
         return f'{hh:0>2.0f}:{mm:0>2.0f}:{ss:0>6.3f}'.replace(".", ",")
@@ -130,7 +130,7 @@ def results_to_token_srt(res: dict, srt_path, combine_compound=False, strip=Fals
            srt_path, strip=strip)
 
 
-def results_to_sentence_word_ass(res: (dict, list), ass_path: str,
+def results_to_sentence_word_ass(res: Tuple[dict, list], ass_path: str,
                                  color: str = None, underline=True,
                                  prefmt: str = None, suffmt: str = None,
                                  font: str = None, font_size: int = 48,
@@ -242,7 +242,7 @@ def results_to_sentence_word_ass(res: (dict, list), ass_path: str,
         prefmt = r'{\1c&' + f'{color.upper()}&{underline_code}' + '}'
         suffmt = r'{\r}'
 
-    def secs_to_hhmmss(secs: (float, int)):
+    def secs_to_hhmmss(secs: Tuple[float, int]):
         mm, ss = divmod(secs, 60)
         hh, mm = divmod(mm, 60)
         return f'{hh:0>1.0f}:{mm:0>2.0f}:{ss:0>2.2f}'

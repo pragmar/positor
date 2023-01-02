@@ -1,29 +1,36 @@
 from setuptools import setup
-
+import re
 
 def version() -> str:
-    with open('./stable_whisper/_version.py') as f:
-        return f.read().split('=')[-1].strip().strip('"').strip("'")
-
+    version_pattern = re.compile('__version__\s*=\s*"(\d+\.\d+\.\d+)"')
+    with open('./positor/__init__.py') as init_file:
+        results = version_pattern.findall(init_file.read())
+        if len(results) == 0:
+            raise ValueError("__init__.py, could not locate semantic version.")
+        return results[0]
 
 def read_me() -> str:
     with open('README.md', 'r') as f:
         return f.read()
 
-
 setup(
-    name="stable-ts",
+    name="positor",
     version=version(),
-    description="Stabilizing timestamps of OpenAI's Whisper outputs down to word-level.",
+    description="Utilities for digital archives.",
     long_description=read_me(),
     long_description_content_type='text/markdown',
-    python_requires=">=3.7",
-    author="Jian",
-    url="https://github.com/jianfch/stable-ts",
+    python_requires=">=3.9",
+    author="pragmar",
+    url="https://github.com/pragmar/positor",
     license="MIT",
-    packages=['stable_whisper'],
+    packages=['positor'],
+    entry_points = {
+        "console_scripts": ['positor = positor.positor:main']
+    },
     install_requires=[
-      "whisper @ git+https://github.com/openai/whisper.git"
+      "colorama>=0.4.0", 
+      "ffprobe-python>=1.0.0"
+      "whisper=1.0.0"
     ],
     include_package_data=False
 )

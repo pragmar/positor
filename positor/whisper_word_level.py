@@ -1,6 +1,9 @@
 import warnings
 import numpy as np
 import torch
+
+from types import MethodType
+from itertools import repeat
 from torch import Tensor
 from torch.nn import functional as F
 from torch.distributions import Categorical
@@ -13,11 +16,10 @@ from whisper.utils import exact_div, format_timestamp, compression_ratio
 from whisper.model import Whisper
 from whisper.decoding import DecodingTask, BeamSearchDecoder, GreedyDecoder
 from whisper.tokenizer import Tokenizer, get_tokenizer
-from types import MethodType
-from itertools import repeat
-from stable_whisper.audio import load_audio_waveform_img, remove_lower_quantile, wave_to_ts_filter
-from stable_whisper.stabilization import stabilize_timestamps, add_whole_word_ts
 from tqdm import tqdm
+from .audio import load_audio_waveform_img, remove_lower_quantile, wave_to_ts_filter
+from .stabilization import stabilize_timestamps, add_whole_word_ts
+
 
 
 __all__ = ['transcribe_word_level', 'decode_word_level', 'modify_model', 'load_model']
@@ -55,7 +57,7 @@ def transcribe_word_level(
         silence_threshold: float = 0.1,
         prepend_punctuations: Union[List[str], Tuple[str]] = None,
         append_punctuations: Union[List[str], Tuple[str]] = None,
-        audio_for_mask: (str, bytes) = None,
+        audio_for_mask: Tuple[str, bytes] = None,
         **decode_options):
     """
     Transcribe an audio file using Whisper
@@ -247,7 +249,7 @@ def transcribe_word_level(
         initial_prompt = tokenizer.encode(" " + initial_prompt.strip())
         all_tokens.extend(initial_prompt)
 
-    def _to_list(x: (Tensor, None)):
+    def _to_list(x: Tuple[Tensor, None]):
         if x is None:
             return x
         return x.tolist()
