@@ -35,3 +35,11 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+/bin/tessdata
+/bin/tesseract.exe
+/bin/ffprobe.exe
+/bin/ffplay.exe
+/bin/ffmpeg.exe
+/setup_cx.py
+/positor.ico
+/page.png

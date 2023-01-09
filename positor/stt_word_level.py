@@ -17,8 +17,8 @@ from whisper.model import Whisper
 from whisper.decoding import DecodingTask, BeamSearchDecoder, GreedyDecoder
 from whisper.tokenizer import Tokenizer, get_tokenizer
 from tqdm import tqdm
-from .audio import load_audio_waveform_img, remove_lower_quantile, wave_to_ts_filter
-from .stabilization import stabilize_timestamps, add_whole_word_ts
+from .stt_audio import load_audio_waveform_img, remove_lower_quantile, wave_to_ts_filter
+from .stt_stabilization import stabilize_timestamps, add_whole_word_ts
 
 
 

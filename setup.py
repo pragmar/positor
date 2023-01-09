@@ -1,3 +1,7 @@
+# packaging, remember to rev version
+# python3 ./setup.py sdist bdist_wheel
+# twine upload dist/positor-0.X.X-py3-none-any.whl
+
 from setuptools import setup
 import re
 
@@ -6,7 +10,7 @@ def version() -> str:
     with open('./positor/__init__.py') as init_file:
         results = version_pattern.findall(init_file.read())
         if len(results) == 0:
-            raise ValueError("__init__.py, could not locate semantic version.")
+            raise RuntimeError("__init__.py, could not locate semantic version.")
         return results[0]
 
 def read_me() -> str:
@@ -28,8 +32,8 @@ setup(
         "console_scripts": ['positor = positor.positor:main']
     },
     install_requires=[
+      "torch==1.11.0", # latest torch has issues with whisper
       "colorama>=0.4.0", 
-      "ffprobe-python>=1.0.0",
       "whisper.ai>=1.0.0"
     ],
     include_package_data=False

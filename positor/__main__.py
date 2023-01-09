@@ -1,5 +1,5 @@
 """
 __main__.py for command line handling
 """
-from .positor import main
+from positor.positor import main
 main()
