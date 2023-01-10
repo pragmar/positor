@@ -24,6 +24,43 @@ class WordBoundaryOverride(Enum):
 # Common
 # -----------------------------------------------------------------------------
 
+class WordBase:
+    """
+    a Word with differing contexts, some audio (SttWord), some not (OcrWord)
+    """
+
+    def __init__(self, words, text, line_index=None):
+        """
+        base word, little is shared
+        line_index isn't guaranteed, availability subject to ocr/stt variance
+        """
+        self._words = words
+        self._text = text.strip()
+        self._index: int = len(words.get_words())
+        self._line_index: int = line_index
+    
+    @property
+    def text(self) -> str:
+        return self._text
+
+    @property
+    def index(self) -> int:
+        return self._index
+    
+    @property
+    def number(self) -> int:
+        return self._index + 1
+
+    @property
+    def line_index(self) -> int:
+        return self._line_index
+
+    @property
+    def line_number(self) -> int:
+        return self._line_index + 1
+    
+
+
 class WordsBase:
     """
     a collection of Words with positions, pulled from stt/ocr. this is the 
@@ -34,14 +71,30 @@ class WordsBase:
     def __init__(self):
         """
         add list to be populated later
+        line_index isn't guaranteed, availability subject to ocr/stt variance
         """
         self._words: List[Any] = []
+        self._lines: List[Any] = []
 
     def get_words(self) -> List[Any]:
         """ 
         returns the complete list of Word instances.
         """
         return self._words
+
+    def get_lines(self) -> List[Any]:
+        """ 
+        returns the complete list of Any instances representing lines.
+        this may be an SttLine instances or something else.
+        """
+        return self._lines
+    
+    # def get_lines_count(self) -> int:
+    #     """ 
+    #     returns the complete list of Any instances representing lines.
+    #     this may be an SttLine instances or something else.
+    #     """
+    #     return len(self._lines)
     
     def get_all_text(self, lowercase: bool = False) -> str:
         """ 
@@ -70,17 +123,51 @@ class WordsBase:
 # OCR
 # -----------------------------------------------------------------------------
 
-class OcrWord:
+class OcrWord(WordBase):
     """
     a word with OCR position attached
     """
-    def __init__(self, text: str, top:int, right:int, bottom: int, left: int):
+    def __init__(self, words, text: str, top:int, right:int, bottom: int, left: int,
+                 confidence=None, line_number=None, block_number=None, 
+                 paragraph_number=None):
+
+        
         assert top <= bottom and right >= left
-        self._text: str = text
+
+        # initialize indexes, normalize the ocr line number to 0-based index
+        # tesseract is one-based, and some lines may be removed altogether
+        # it's really important to note line_number is from tesseract, and does
+        # not describe the internal line_number which is an increment when a
+        # new line_number is seen
+        if line_number is not None and line_number > 0:
+            lines: list = words.get_lines()
+            # len(lines) is default, for a new one
+            line_index: int = lines.index(line_number) if line_number in lines else len(lines)
+            super().__init__(words, text, line_index=line_index)
+            # add line_number so it keeps record for above "in" test
+            if line_number not in lines:
+                lines.append(line_number)
+        else:
+            # line_index is None, which is fine
+            super().__init__(words, text)
+        self._words: OcrWords = words
+        #self._text: str = text
         self._top: int = top
         self._right: int = right
         self._bottom: int = bottom
         self._left: int = left
+        # normalize these "numbers" (one-based) to _index properties
+        # this is the best way of maintaining naming consistency across
+        # ocr/stt engines. so... everything goes in as 0-based "index"
+        # line, and word. then if "numbers" are necessary, they are handled
+        # with properties.
+        # collect all tesseract but word # (which is internally tracked)
+        # and line number, which was normalized to line_index above
+        # note block and paragraph numbers are 1-based, and are not 
+        # converted to an index. they don't seem important at the moment.
+        self._confidence: int = confidence
+        self._block_number: int = block_number
+        self._paragraph_number: int = paragraph_number
     
     @property
     def text(self) -> str:
@@ -101,6 +188,18 @@ class OcrWord:
     @property
     def left(self) -> int:
         return self._left
+
+    @property
+    def confidence(self) -> float:
+        return self._confidence
+
+    @property
+    def block_number(self) -> int:
+        return self._block_number
+
+    @property
+    def paragraph_number(self) -> int:
+        return self._paragraph_number
 
     def __str__(self) -> str:
         return "{0} [{1:0.0f}, {2:0.0f}, {1:0.0f}, {2:0.0f}]".format(
@@ -129,8 +228,14 @@ class OcrWords(WordsBase):
         bottom: int = top + int(row["height"])
         left: int = int(row["left"])
         right: int = left + int(row["height"])
+        # getting into ocr engnine specific values
+        confidence: float = row["conf"]
+        line_number: int = row["line_num"]
+        block_number: int = row["block_num"]
+        paragraph_number: int = row["par_num"]
         # css order, clockwise from 12 o'clock 
-        word = OcrWord(row["text"], top, right, bottom, left)
+        word = OcrWord(self, row["text"], top, right, bottom, left, confidence=confidence, 
+            line_number=line_number, block_number=block_number, paragraph_number=paragraph_number)
         self._words.append(word)
 
     def _get_tesseract_value(self, label: str, value: str):
@@ -183,10 +288,13 @@ class SttLine():
     a group of Words (subtitles style), as provided from whisper.
     Used to keep timings anchored while reordering timestamps.
     """
-    def __init__(self, start: float, end: float, number: int):
+    def __init__(self, words: WordsBase, start: float, end: float):
+        self._words: float = words
         self._start: float = start
         self._end: float = end
-        self._number: int = number
+        self._index: int = len(words.get_lines())
+        self._number = self._index + 1
+        
     
     @property
     def start(self) -> float:
@@ -197,24 +305,24 @@ class SttLine():
         return self._end
 
     @property
+    def index(self) -> int:
+        return self._index
+    
+    @property
     def number(self) -> int:
-        return self._number
+        return self._index + 1
 
-class SttWord:
+class SttWord(WordBase):
     """
     a word, likely one of many. parent/container is SttWords which represents
     an extracted audio stream from audio/video.
     """
 
-    def __init__(self, text: str, timestamps: List[float], words, line: SttLine, 
+    def __init__(self, words, text: str, timestamps: List[float], line: SttLine, 
             override: WordBoundaryOverride):
-        
-        # text is the word text, it can be modified by extend()
-        self.text = text.strip()
-        
-        # number aquired from Words container (next up)
-        self._word_number: int = words.get_count()
 
+        super().__init__(words, text, line_index=line.index)
+        
         # Whisper wants to work in phrases/lines of text, has timings available 
         # take line start/end seriously, since it's the most intentional value returned
         # by whisper. words can (and do!) exceed line bounds.
@@ -258,8 +366,8 @@ class SttWord:
         is returned.
         """
         _words = self._words.get_words()
-        return _words[self._word_number + 1] if (
-            self._word_number + 1) < self._words.get_count() else None
+        return _words[self._index + 1] if (
+            self._index + 1) < self._words.get_count() else None
     
     def previous(self):
         """
@@ -268,14 +376,14 @@ class SttWord:
         is returned.
         """
         _words = self._words.get_words()
-        return _words[self._word_number - 1] if self._word_number > 0 else None
+        return _words[self._index - 1] if self._index > 0 else None
     
     def extend(self, text: str, timestamps: List[float], override: WordBoundaryOverride):
         """
         extend the Word object, adding additional text (generally 
         punctuation).
         """
-        self.text = "{0}{1}".format(self.text, text)
+        self._text = "{0}{1}".format(self._text, text)
         if override == WordBoundaryOverride.LineEnd:
             self.update_boundary(self.line_end, self.line_end, override)
     
@@ -295,10 +403,10 @@ class SttWord:
     @property
     def line_end(self) -> float:
         return self._line.end
-    
+
     @property
-    def line_number(self) -> int:
-        return self._line.number
+    def line_index(self) -> int:
+        return self._line.index
     
     @property
     def line_contained(self) -> bool:
@@ -351,7 +459,7 @@ class SttWord:
     
     @property
     def number(self) -> float:
-        return self._word_number
+        return self._index
     
     @property
     def start(self) -> float:
@@ -432,7 +540,9 @@ class SttWords(WordsBase):
             # set the outer boundaries of this line_segment, used to constrain words within
             line_segment_word_partials = line_segment["unstable_word_timestamps"]
             line_segment_word_partials_count = len(line_segment_word_partials)
-            line = SttLine(line_segment["start"], line_segment["end"], i)
+            line = SttLine(self, line_segment["start"], line_segment["end"])
+            self._lines.append(line)
+            
 
             # loop over word partials, some only contain punctuation
             for j, line_segment_word_partial in enumerate(line_segment_word_partials):
@@ -445,7 +555,7 @@ class SttWords(WordsBase):
                 # if word starts with " " (space), it's a new word.
                 # i once saw some weird .NET behavior in whisper (" " || ".")
                 if text[0] == " " or (text[0] == "." and len(text) > 1):
-                    current_word = SttWord(text, timestamps, self, line, override)
+                    current_word = SttWord(self, text, timestamps, line, override)
                     self._add_word(current_word)
                 # continuation of current word, likely punctuation, unknown
                 elif current_word is not None:
@@ -492,10 +602,10 @@ class SttWords(WordsBase):
         """
         reorders word timestamps to make sure the are sequential (>= last word)
         """
-        # get all words, then separate into lists by line_number
+        # get all words, then separate into lists by line_index
         words: List[SttWord] = self.get_words()
-        grouped_by_line: List[List[SttWord]] = [list(result) for key, result in groupby(words, key=lambda word: word.line_number)]
-
+        grouped_by_line: List[List[SttWord]] = [list(result) for key, result in groupby(words, key=lambda word: word.line_index)]
+        
         # cursor tracks known success as word.start timestamps
         cursor = None
         
@@ -519,7 +629,7 @@ class SttWords(WordsBase):
                     continue
                 elif word.boundary_override == WordBoundaryOverride.LineEnd:
                     # make certain we are last in line, as expected
-                    assert (word.number == line_of_words[-1].number)
+                    assert (word.index == line_of_words[-1].index)
                     break
                 elif word.boundary_override == WordBoundaryOverride.Undefined:
                     next: SttWord = word.next()

@@ -42,9 +42,9 @@ except ImportError:
     positor_env = LibContext.Packaged
 
 ACCEPTED_OCR_INPUT_EXTENSIONS: Tuple[str] = (".bmp", ".png", ".jpg", ".jpeg", ".gif")
-ACCEPTED_OCR_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".tsv", ".json")
+ACCEPTED_OCR_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".csv", ".tsv", ".json")
 ACCEPTED_STT_INPUT_EXTENSIONS: Tuple[str] = (".wav", ".mp3", ".mp4", ".m4a")
-ACCEPTED_STT_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".json", ".vtt", ".srt")
+ACCEPTED_STT_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".csv", ".json", ".vtt", ".srt")
 # TODO .en varieties not supported yet, errors
 ACCEPTED_STT_WHISPER_MODELS: Tuple[str] = ("tiny", "small", "medium", "large-v2")
 
@@ -72,25 +72,25 @@ def main():
     parser.add_argument("-i", "--infile", help="audio, video, or image file", type=str)
     parser.add_argument("-w", "--whisper-model", help="supported whisper models (i.e. {0}), stt-only".format(
         ", ".join(quoted_models)), type=str, default="tiny")
-    parser.add_argument("-l", "--tesslang", help="tesseract language code, ocr-only", type=str, default="eng")
-    parser.add_argument("-d", "--tessdata", help="folder containing tesseract language packs, ocr-only", type=str)
+    parser.add_argument("-l", "--tesseract-language", help="tesseract language code, ocr-only", type=str, default="eng")
+    parser.add_argument("-d", "--tesseract-directory", help="folder containing tesseract language packs, ocr-only", type=str)
     parser.add_argument("-a", "--absolute", help="use absolute positions (seconds/pixels) in json output",
         action="store_true")
-    parser.add_argument("-c", "--lowercase", help="lowercase text in json output", action="store_true")
-    parser.add_argument("-p", "--verbose", help="print program information to stdout", action="store_true")
+    parser.add_argument("-g", "--lowercase", help="lowercase text in json output", action="store_true")
+    parser.add_argument("-c", "--condensed", help="condensed data-structure json output (for client-side)", action="store_true")
     parser.add_argument("-v", "--version", help="print version information", action="store_true")
+    parser.add_argument("-x", "--verbose", help="print sometimes helpful information to stdout", action="store_true")
     #parser.add_argument("-f", "--fp16", action="store_true", help="half-precision floating point")
-    parser.add_argument("outfile", help="*.txt, *.json, *.vtt (stt), *.srt (stt), *.tsv (ocr)", nargs="?", type=str)
+    parser.add_argument("outfile", help="*.txt, *.csv, *.json, *.vtt (stt), *.srt (stt), *.tsv (ocr)", nargs="?", type=str)
     parser.add_argument("outfile2", help="optional, additional outfile", nargs="?", type=str)
     parser.add_argument("outfile3", help="optional, additional outfile", nargs="?", type=str)
-    
     args: Namespace = parser.parse_args()
 
     if args.version == True:
         print(__version__)
         sys.exit(0)
 
-    # this is the positor (zero argument) screen, but is actually more general
+    # this is the positor (zero argument) screen, but is more generally
     # too few arguments, print condensed program description to stderr
     if len(sys.argv) < 3:
         add_tesseract = "; tesseract/{0}".format(__tesseract_version__) if \
@@ -112,11 +112,12 @@ def main():
     outfiles: List[str] = [f for f in [args.outfile, args.outfile2, args.outfile3]]
     input_file_ext: str = os.path.splitext(infile)[1].lower()
     if input_file_ext in ACCEPTED_STT_INPUT_EXTENSIONS:
-        stt(infile, outfiles, whisper_model, lowercase=args.lowercase, 
+        stt(infile, outfiles, whisper_model, condensed=args.condensed, lowercase=args.lowercase, 
             absolute=args.absolute, verbose=args.verbose)
     elif input_file_ext in ACCEPTED_OCR_INPUT_EXTENSIONS:
-        ocr(infile, outfiles, whisper_model, lowercase=args.lowercase, absolute=args.absolute, 
-            tessdata=args.tessdata, tesslang=args.tesslang, verbose=args.verbose)
+        ocr(infile, outfiles, whisper_model, condensed=args.condensed,  lowercase=args.lowercase, 
+           absolute=args.absolute, tessdata=args.tesseract_directory, language=args.tesseract_language, 
+           verbose=args.verbose)
 
 def __error_and_exit(message: str):
     """
@@ -143,8 +144,8 @@ def __filter_outfiles(outfiles: List[str], acceptable_ext: List[str]):
         sys.exit(0)
     return filtered_outfiles
 
-def ocr(infile: str, outfiles: list[str], whisper_model: str, lowercase=False, absolute=False, 
-        tessdata=None, tesslang=None, verbose=False):
+def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, lowercase=False,
+         absolute=False, tessdata=None, language=None, verbose=False):
     """
     Handle OCR request.
     @infile - an image. a png, perhaps
@@ -154,7 +155,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, lowercase=False, a
     @absolute - use absolute units of measurement, as opposed to %
     @verbose - show some process info, for debugging, subject to change
     """
-
+    
     # first things first, look for tesseract, and bail if not found
     tesseract_command = ["tesseract", "-v"]
     tesseract_process = subprocess.Popen( tesseract_command, shell=True, stdout=subprocess.PIPE, 
@@ -169,7 +170,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, lowercase=False, a
     filtered_outfiles: List[str] = __filter_outfiles(outfiles, ACCEPTED_OCR_OUTPUT_EXTENSIONS)
 
     # deferred to keep non-stt/ocr generating console commands zippy
-    from .models import OcrWords, OcrWord
+    from .models import OcrWords, OcrWord, SttWords, SttWord
     from PIL import Image
 
     # TODO the language/lang code dance here, echo back to user about tessdata=...
@@ -180,8 +181,12 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, lowercase=False, a
     tmpfile_stub = os.path.join(tempdir.name, uuid.uuid4().hex)
     tmpfile = "{0}.tsv".format(tmpfile_stub)
 
-    tesslang = tesslang if tesslang is not None else "eng"
-    tesseract_command = ["tesseract", infile, tmpfile_stub, "--oem", "1", "-l", tesslang, "tsv"]
+    # ensure defaulted as necessary, also note 3-letter code is non-standard
+    # these can also be extended to multiple, e.g. eng+spa. more complicated than it looks
+    language = language if language is not None else "eng"
+    # --oem 1, neural net over legacy ocr engine
+    # https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html
+    tesseract_command = ["tesseract", infile, tmpfile_stub, "--oem", "1", "-l", language, "tsv"]
     if tessdata is not None:
         if os.path.isdir(tessdata):
             tessdata_args = ["--tessdata-dir", tessdata]
@@ -209,6 +214,16 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, lowercase=False, a
     words = OcrWords()
     words.load_tesseract_results(tsv)
 
+    # helper function, only used in some cases
+    def get_infile_dimensions(infile: str):
+        # get dims, assert non-zero (division comes next)
+        img = Image.open(infile)
+        input_width = img.width
+        input_height = img.height
+        img.close()
+        assert input_width > 0 and input_height > 0
+        return input_width, input_height
+
     # for each output file, handle according to .ext
     for outfile in filtered_outfiles:
         text = words.get_all_text(lowercase=lowercase)
@@ -216,30 +231,62 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, lowercase=False, a
         if outfile_ext == ".txt":
             with io.open(outfile,"w", encoding="utf-8") as out:
                 out.write(text)
+        elif outfile_ext == ".csv":
+            # get dims, assert non-zero (we're dividing)
+            input_width, input_height = get_infile_dimensions(infile)
+            lines = ["text,top,right,bottom,left,#image_width:{0},#image_height:{1}".format(input_width, input_height)]
+            for word in words.get_words():
+                word_text: str = word.text
+                # can't have rogue commas in csv, wrap in quotes, csv-escape existing quotes
+                if "," in word_text:
+                    word_text = '"{0}"'.format(word_text.replace('"','""'))
+                lines.append("{0},{1},{2},{3},{4}".format(word_text, word.top, word.right, word.bottom, word.right))
+            with io.open(outfile,"w", encoding="utf-8") as out:
+                out.write("\n".join(lines))
         elif outfile_ext == ".tsv":
             with io.open(outfile,"w", encoding="utf-8") as out:
                 out.write(tsv)
         elif outfile_ext == ".json":
-            # get dims, assert non-zero (we're dividing)
-            img = Image.open(infile)
-            input_width = img.width
-            input_height = img.height
-            img.close()
-            # image data is required
-            assert input_width > 0 and input_height > 0
-            ocr_json = JsonPositions.get_ocr_json(infile, input_width, input_height, absolute, __version__)
+            input_width, input_height = get_infile_dimensions(infile)
+            ocr_json = JsonPositions.get_ocr_json(infile, input_width, input_height, condensed, absolute, __version__)
             ocr_json["text"] = text
+
             words = words.get_words()
             # sanity check, make sure no whitespace in word.text from tesseract
             assert len(words) == len(text.split(" "))
+            
             for word in words:
-                if absolute == True:
+                # not condensed is default request, assume maximal optionality
+                # hand back bits and pieces not in condensed. use extensible 
+                # dict object to make future updates drama free
+
+                if not condensed:
+                    # tradition here is css: clockwise from 12, top, right, bottom, left
+                    ocr_json["positions"].append({
+                        "text": word.text,
+                        "top": word.top,
+                        "right": word.right, 
+                        "bottom": word.bottom, 
+                        "left": word.left,
+                        "line_number": word.line_number,
+                        "confidence": word.confidence,
+                        # these are tesseract dependent. want to leave option of 
+                        # changing engines, this will be eventually self limiting
+                        # also tesseract uses 1 based counts, which is different than stt
+                        # exposing these values would be far, far too dangerous.
+                        # so in light of consistency, keep these out of view
+                        # "_line_number": word.line_number,
+                        # "_block_number": word._block_number,
+                        # "_paragraph_number": word._paragraph_number,
+                    })
+                elif absolute == True:
                     # tradition here is css: clockwise from 12, top, right, bottom, left
                     ocr_json["positions"].append([word.top, word.right, word.bottom, word.left])
                 else:
                     # 4 precision is to the one ten-thousandth (width or height)
                     # keeps filesize down, with appropriate precision headroom
                     # try it, can always move to one hundred-thousandth later.
+                    # >9999 pixel width images seem rare
                     top = round(word.top/input_height, 4)
                     right = round(word.right/input_width, 4)
                     bottom = round(word.bottom/input_height, 4)
@@ -249,8 +296,8 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, lowercase=False, a
             with io.open(outfile,"w", encoding="utf-8") as out:
                 out.write(json.dumps(ocr_json))
 
-def stt(infile: str, outfiles: List[str], whisper_model: str, lowercase=False, 
-        absolute=False, verbose=False):
+def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False, 
+        lowercase=False, absolute=False, verbose=False):
     
     # will exit, prior to loading modules (fast), if anything is off
     filtered_outfiles: List[str] = __filter_outfiles(outfiles, ACCEPTED_STT_OUTPUT_EXTENSIONS)
@@ -306,28 +353,40 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, lowercase=False,
 
     # for each output file, handle according to .ext
     for outfile in filtered_outfiles:
-
-        text = words.get_all_text(lowercase=lowercase)
-        # if lowercase == True:
-        #     text = text.lower()
-        
+        text = words.get_all_text(lowercase=lowercase)        
         outfile_ext = os.path.splitext(outfile)[1].lower()
         
         if outfile_ext == ".txt":
             with io.open(outfile,"w", encoding="utf-8") as out:
                 out.write(json.dumps(text))
+        elif outfile_ext == ".csv":
+            lines = ["text,line,start,end,#audio_duration:{0}".format(duration)]
+            for word in words.get_words():
+                word_text: str = word.text
+                if "," in word_text:
+                    word_text = '"{0}"'.format(word_text.replace('"','""'))
+                lines.append("{0},{1},{2},{3}".format(word_text, word.line_number, word.start, word.end))
+            with io.open(outfile,"w", encoding="utf-8") as out:
+                out.write("\n".join(lines))
         elif outfile_ext == ".json":
-            stt_json = JsonPositions.get_stt_json(infile, duration, absolute, __version__)
+            stt_json = JsonPositions.get_stt_json(infile, duration, condensed, absolute, __version__)
             stt_json["text"] = text
             for word in words.get_words():
-                if absolute == True:
+                if condensed == False:
+                    stt_json["positions"].append({
+                        "text": word.text,
+                        "start": word.start,
+                        "end": word.end, 
+                        "line_number": word.line_number, 
+                    })
+                elif absolute == True:
                     # 2 is to the hundreth of a second, absolutely positioned
                     start = round(word.start, 2)
                     end = round(word.end, 2)
                     stt_json["positions"].append([start, end])
                 else:
-                    # 6 is to the millionth, >1/100 second precision for any reasonable
-                    # file, and relatively positioned. a percentage start and end on a timeline
+                    # 6 is to the millionth, >1/10 second precision for up to 24 hours of stream 
+                    # audio, relatively positioned. a percentage start and end on a timeline
                     # of 1. the format is compact. increase if you need higher precision at
                     # cost of bloat
                     start = round(word.start/duration, 6)

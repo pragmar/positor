@@ -9,6 +9,7 @@ __pycache__/
 *.txt
 *.vtt
 *.json
+*.csv
 
 # test input files
 *.wav
