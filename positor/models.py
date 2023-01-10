@@ -47,9 +47,9 @@ class WordBase:
     def index(self) -> int:
         return self._index
     
-    @property
-    def number(self) -> int:
-        return self._index + 1
+    #@property
+    #def number(self) -> int:
+    #    return self._index + 1
 
     @property
     def line_index(self) -> int:
@@ -293,7 +293,7 @@ class SttLine():
         self._start: float = start
         self._end: float = end
         self._index: int = len(words.get_lines())
-        self._number = self._index + 1
+        # self._number = self._index + 1
         
     
     @property
@@ -308,9 +308,9 @@ class SttLine():
     def index(self) -> int:
         return self._index
     
-    @property
-    def number(self) -> int:
-        return self._index + 1
+    # @property
+    # def number(self) -> int:
+    #     return self._index + 1
 
 class SttWord(WordBase):
     """
@@ -361,7 +361,7 @@ class SttWord(WordBase):
     
     def next(self):
         """
-        get the next Word in the series. Always the word.number
+        get the next Word in the series. Always the word._index
         of + 1, within Words._words. If no next exists, None
         is returned.
         """
@@ -371,7 +371,7 @@ class SttWord(WordBase):
     
     def previous(self):
         """
-        get the previous Word in the series. Always the word.number
+        get the previous Word in the series. Always the word._index
         of - 1, within Words._words. If no previous exists, None
         is returned.
         """
@@ -646,7 +646,7 @@ class SttWords(WordsBase):
                         continue
                     else:
                         # word does not order within tolerances, handle with care
-                        word_is_sequential_reject = len(accumulated_rejects) == 0 or word.number == accumulated_rejects[-1].number + 1
+                        word_is_sequential_reject = len(accumulated_rejects) == 0 or word.index == accumulated_rejects[-1].index + 1
                         if word_is_sequential_reject:
                             accumulated_rejects.append(word)
                         else:

@@ -17,11 +17,9 @@ from positor.positions import JsonPositions
 
 class LibContext(Enum):
     """
-    describes the relationship of a Word to its neighbor Words,
-    and line structure provided by Whisper. line start/end considered
-    highest confidence time data. solo is a one word line, i.e. no 
-    bounding words. sequencer marks a program intervention to prevent 
-    out of order time/word series.
+    describes the runtime situation. module is a python
+    pip install situation. packaged is the installer binaries
+    running as exe, dmg, etc..
     """
     Module = 0
     Packaged = 1
@@ -115,7 +113,7 @@ def main():
         stt(infile, outfiles, whisper_model, condensed=args.condensed, lowercase=args.lowercase, 
             absolute=args.absolute, verbose=args.verbose)
     elif input_file_ext in ACCEPTED_OCR_INPUT_EXTENSIONS:
-        ocr(infile, outfiles, whisper_model, condensed=args.condensed,  lowercase=args.lowercase, 
+        ocr(infile, outfiles, whisper_model, condensed=args.condensed, lowercase=args.lowercase, 
            absolute=args.absolute, tessdata=args.tesseract_directory, language=args.tesseract_language, 
            verbose=args.verbose)
 
@@ -211,8 +209,8 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
         raise RuntimeError("Unreadable tesseract response. ({0})".format(input_file))
     
     # take tsv result and feed it into words class
-    words = OcrWords()
-    words.load_tesseract_results(tsv)
+    ocrwords = OcrWords()
+    ocrwords.load_tesseract_results(tsv)
 
     # helper function, only used in some cases
     def get_infile_dimensions(infile: str):
@@ -226,7 +224,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
 
     # for each output file, handle according to .ext
     for outfile in filtered_outfiles:
-        text = words.get_all_text(lowercase=lowercase)
+        text = ocrwords.get_all_text(lowercase=lowercase)
         outfile_ext = os.path.splitext(outfile)[1].lower()
         if outfile_ext == ".txt":
             with io.open(outfile,"w", encoding="utf-8") as out:
@@ -235,7 +233,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
             # get dims, assert non-zero (we're dividing)
             input_width, input_height = get_infile_dimensions(infile)
             lines = ["text,top,right,bottom,left,#image_width:{0},#image_height:{1}".format(input_width, input_height)]
-            for word in words.get_words():
+            for word in ocrwords.get_words():
                 word_text: str = word.text
                 # can't have rogue commas in csv, wrap in quotes, csv-escape existing quotes
                 if "," in word_text:
@@ -250,16 +248,13 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
             input_width, input_height = get_infile_dimensions(infile)
             ocr_json = JsonPositions.get_ocr_json(infile, input_width, input_height, condensed, absolute, __version__)
             ocr_json["text"] = text
-
-            words = words.get_words()
+            words = ocrwords.get_words()
             # sanity check, make sure no whitespace in word.text from tesseract
             assert len(words) == len(text.split(" "))
-            
             for word in words:
                 # not condensed is default request, assume maximal optionality
                 # hand back bits and pieces not in condensed. use extensible 
                 # dict object to make future updates drama free
-
                 if not condensed:
                     # tradition here is css: clockwise from 12, top, right, bottom, left
                     ocr_json["positions"].append({
@@ -348,12 +343,12 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
     results: dict = whisper_model.transcribe(infile, fp16=False)
     sys.stdout = sys.__stdout__
     
-    words = SttWords()
-    words.load_whisper_results(results)
+    sttwords = SttWords()
+    sttwords.load_whisper_results(results)
 
     # for each output file, handle according to .ext
     for outfile in filtered_outfiles:
-        text = words.get_all_text(lowercase=lowercase)        
+        text = sttwords.get_all_text(lowercase=lowercase)        
         outfile_ext = os.path.splitext(outfile)[1].lower()
         
         if outfile_ext == ".txt":
@@ -361,7 +356,7 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
                 out.write(json.dumps(text))
         elif outfile_ext == ".csv":
             lines = ["text,line,start,end,#audio_duration:{0}".format(duration)]
-            for word in words.get_words():
+            for word in sttwords.get_words():
                 word_text: str = word.text
                 if "," in word_text:
                     word_text = '"{0}"'.format(word_text.replace('"','""'))
@@ -371,7 +366,7 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
         elif outfile_ext == ".json":
             stt_json = JsonPositions.get_stt_json(infile, duration, condensed, absolute, __version__)
             stt_json["text"] = text
-            for word in words.get_words():
+            for word in sttwords.get_words():
                 if condensed == False:
                     stt_json["positions"].append({
                         "text": word.text,
@@ -401,7 +396,7 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
             contents = ["WEBVTT","NOTE webvtt generated by positor/{0}, {1}".format(
                 __version__, JsonPositions.get_stt_format(absolute))]
             grouped_by_line: List[List[SttWord]] = [list(result) for key, result in 
-                groupby(words.get_words(), key=lambda word: word.line_number)]
+                groupby(sttwords.get_words(), key=lambda word: word.line_number)]
             for line in grouped_by_line:
                 first_word = line[0]
                 contents.append("{0} --> {1}\n- {2}".format(
@@ -420,7 +415,7 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
             contents = ["NOTE srt generated by positor/{0}, {1}".format(
                 __version__, JsonPositions.get_stt_format(absolute))]
             grouped_by_line: List[List[SttWord]] = [list(result) for key, result in 
-                groupby(words.get_words(), key=lambda word: word.line_number)]
+                groupby(sttwords.get_words(), key=lambda word: word.line_number)]
             for i, line in enumerate(grouped_by_line):
                 first_word = line[0]
                 contents.append("{0}\n{1} --> {2}\n{3}".format(
@@ -437,9 +432,9 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
 
     # or to get token timestamps that adhere more to the top prediction
     if verbose:
-        print(words.get_all_text())
+        print(sttwords.get_all_text())
         print("\nPositions:\n")
-        for word in words.get_words():
-            print("{:>6}. [{:.2f} - {:.2f}] {:<25}".format(word.number, float(word.start), 
+        for word in sttwords.get_words():
+            print("{:>6}. [{:.2f} - {:.2f}] {:<25}".format(word.index, float(word.start), 
                 float(word.end), word.text_with_modified_asterisk))
         print("")
