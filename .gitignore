@@ -40,3 +40,4 @@ bin/
 *.ico
 *_cx.py
 MANIFEST
+clutter/

@@ -39,7 +39,7 @@ except ImportError:
     warnings.filterwarnings(action="ignore", category=UserWarning)
     positor_env = LibContext.Packaged
 
-ACCEPTED_OCR_INPUT_EXTENSIONS: Tuple[str] = (".bmp", ".png", ".jpg", ".jpeg", ".gif")
+ACCEPTED_OCR_INPUT_EXTENSIONS: Tuple[str] = (".bmp", ".png", ".jpg", ".jpeg", ".gif", ".tiff")
 ACCEPTED_OCR_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".csv", ".tsv", ".json")
 ACCEPTED_STT_INPUT_EXTENSIONS: Tuple[str] = (".wav", ".mp3", ".mp4", ".m4a")
 ACCEPTED_STT_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".csv", ".json", ".vtt", ".srt")
@@ -72,10 +72,9 @@ def main():
         ", ".join(quoted_models)), type=str, default="tiny")
     parser.add_argument("-l", "--tesseract-language", help="tesseract language code, ocr-only", type=str, default="eng")
     parser.add_argument("-d", "--tesseract-directory", help="folder containing tesseract language packs, ocr-only", type=str)
-    parser.add_argument("-a", "--absolute", help="use absolute positions (seconds/pixels) in json output",
-        action="store_true")
-    parser.add_argument("-g", "--lowercase", help="lowercase text in json output", action="store_true")
-    parser.add_argument("-c", "--condensed", help="condensed data-structure json output (for client-side)", action="store_true")
+    parser.add_argument("-g", "--json-lowercase", help="lowercase text in json output", action="store_true")
+    parser.add_argument("-c", "--json-condensed", help="condensed data-structure json output (for client-side)", action="store_true")
+    parser.add_argument("-a", "--json-condensed-absolute", help="condensed, but with absolute positions", action="store_true")
     parser.add_argument("-v", "--version", help="print version information", action="store_true")
     parser.add_argument("-x", "--verbose", help="print sometimes helpful information to stdout", action="store_true")
     #parser.add_argument("-f", "--fp16", action="store_true", help="half-precision floating point")
@@ -106,16 +105,22 @@ def main():
     
     # things appear on the up and up, proceed.
     infile: str = args.infile
+
+    
     whisper_model: str = args.whisper_model
     outfiles: List[str] = [f for f in [args.outfile, args.outfile2, args.outfile3]]
     input_file_ext: str = os.path.splitext(infile)[1].lower()
-    if input_file_ext in ACCEPTED_STT_INPUT_EXTENSIONS:
-        stt(infile, outfiles, whisper_model, condensed=args.condensed, lowercase=args.lowercase, 
-            absolute=args.absolute, verbose=args.verbose)
+    if input_file_ext not in ACCEPTED_STT_INPUT_EXTENSIONS + ACCEPTED_OCR_INPUT_EXTENSIONS:
+        __error_and_exit("Infile unsupported. \nSTT support: {0}.\nOCR support: {1}".format(
+            ", ".join(ACCEPTED_STT_INPUT_EXTENSIONS), ", ".join(ACCEPTED_OCR_INPUT_EXTENSIONS))
+        )
+    elif input_file_ext in ACCEPTED_STT_INPUT_EXTENSIONS:
+        stt(infile, outfiles, whisper_model, condensed=args.json_condensed, lowercase=args.json_lowercase, 
+            absolute_condensed=args.json_condensed_absolute, verbose=args.verbose)
     elif input_file_ext in ACCEPTED_OCR_INPUT_EXTENSIONS:
-        ocr(infile, outfiles, whisper_model, condensed=args.condensed, lowercase=args.lowercase, 
-           absolute=args.absolute, tessdata=args.tesseract_directory, language=args.tesseract_language, 
-           verbose=args.verbose)
+        ocr(infile, outfiles, whisper_model, condensed=args.json_condensed, lowercase=args.json_lowercase, 
+           absolute_condensed=args.json_condensed_absolute, tessdata=args.tesseract_directory, 
+           language=args.tesseract_language, verbose=args.verbose)
 
 def __error_and_exit(message: str):
     """
@@ -143,7 +148,7 @@ def __filter_outfiles(outfiles: List[str], acceptable_ext: List[str]):
     return filtered_outfiles
 
 def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, lowercase=False,
-         absolute=False, tessdata=None, language=None, verbose=False):
+         absolute_condensed=False, tessdata=None, language=None, verbose=False):
     """
     Handle OCR request.
     @infile - an image. a png, perhaps
@@ -246,11 +251,16 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
                 out.write(tsv)
         elif outfile_ext == ".json":
             input_width, input_height = get_infile_dimensions(infile)
-            ocr_json = JsonPositions.get_ocr_json(infile, input_width, input_height, condensed, absolute, __version__)
+            # sort of odd use of command line, one bool greater than the next
+            is_condensed: bool = condensed or absolute_condensed
+            is_absolute: bool = absolute_condensed
+            ocr_json = JsonPositions.get_ocr_json(infile, input_width, input_height, is_condensed, is_absolute, __version__)
             ocr_json["text"] = text
             words = ocrwords.get_words()
+            words_count:int = len(words)
             # sanity check, make sure no whitespace in word.text from tesseract
-            assert len(words) == len(text.split(" "))
+            # len("".split(" ")) == 1, when words is 0, otherwise good
+            assert (words_count in (len(text.split(" ")), 0))
             for word in words:
                 # not condensed is default request, assume maximal optionality
                 # hand back bits and pieces not in condensed. use extensible 
@@ -263,7 +273,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
                         "right": word.right, 
                         "bottom": word.bottom, 
                         "left": word.left,
-                        "line_number": word.line_number,
+                        "line_index": word.line_index,
                         "confidence": word.confidence,
                         # these are tesseract dependent. want to leave option of 
                         # changing engines, this will be eventually self limiting
@@ -274,7 +284,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
                         # "_block_number": word._block_number,
                         # "_paragraph_number": word._paragraph_number,
                     })
-                elif absolute == True:
+                elif absolute_condensed == True:
                     # tradition here is css: clockwise from 12, top, right, bottom, left
                     ocr_json["positions"].append([word.top, word.right, word.bottom, word.left])
                 else:
@@ -292,7 +302,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
                 out.write(json.dumps(ocr_json))
 
 def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False, 
-        lowercase=False, absolute=False, verbose=False):
+        lowercase=False, absolute_condensed=False, verbose=False):
     
     # will exit, prior to loading modules (fast), if anything is off
     filtered_outfiles: List[str] = __filter_outfiles(outfiles, ACCEPTED_STT_OUTPUT_EXTENSIONS)
@@ -353,28 +363,30 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
         
         if outfile_ext == ".txt":
             with io.open(outfile,"w", encoding="utf-8") as out:
-                out.write(json.dumps(text))
+                out.write(text)
         elif outfile_ext == ".csv":
-            lines = ["text,line,start,end,#audio_duration:{0}".format(duration)]
+            lines = ["text,line_index,start,end,#audio_duration:{0}".format(duration)]
             for word in sttwords.get_words():
                 word_text: str = word.text
                 if "," in word_text:
                     word_text = '"{0}"'.format(word_text.replace('"','""'))
-                lines.append("{0},{1},{2},{3}".format(word_text, word.line_number, word.start, word.end))
+                lines.append("{0},{1},{2},{3}".format(word_text, word.line_index, word.start, word.end))
             with io.open(outfile,"w", encoding="utf-8") as out:
                 out.write("\n".join(lines))
         elif outfile_ext == ".json":
-            stt_json = JsonPositions.get_stt_json(infile, duration, condensed, absolute, __version__)
+            is_condensed: bool = condensed or absolute_condensed
+            is_absolute: bool = absolute_condensed
+            stt_json = JsonPositions.get_stt_json(infile, duration, is_condensed, is_absolute, __version__)
             stt_json["text"] = text
             for word in sttwords.get_words():
-                if condensed == False:
+                if is_condensed == False:
                     stt_json["positions"].append({
                         "text": word.text,
                         "start": word.start,
                         "end": word.end, 
-                        "line_number": word.line_number, 
+                        "line_index": word.line_index, 
                     })
-                elif absolute == True:
+                elif is_absolute == True:
                     # 2 is to the hundreth of a second, absolutely positioned
                     start = round(word.start, 2)
                     end = round(word.end, 2)
@@ -393,13 +405,14 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
             # 00:01:14.815 --> 00:01:18.114
             # - What?
             # - Where are we now?
+            schema = JsonPositions.get_json_format("stt", False, True)
             contents = ["WEBVTT","NOTE webvtt generated by positor/{0}, {1}".format(
-                __version__, JsonPositions.get_stt_format(absolute))]
+                __version__, schema)]
             grouped_by_line: List[List[SttWord]] = [list(result) for key, result in 
-                groupby(sttwords.get_words(), key=lambda word: word.line_number)]
+                groupby(sttwords.get_words(), key=lambda word: word.line_index)]
             for line in grouped_by_line:
                 first_word = line[0]
-                contents.append("{0} --> {1}\n- {2}".format(
+                contents.append("{0} --> {1}\n{2}".format(
                     SttWord.seconds_to_timestamp(first_word.line_start), 
                     SttWord.seconds_to_timestamp(first_word.line_end), 
                     " ".join([w.text for w in line]))
@@ -412,10 +425,11 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
             # 1
             # 00:05:00,400 --> 00:05:15,300
             # This is an example of a subtitle.
+            schema = JsonPositions.get_json_format("stt", False, True)
             contents = ["NOTE srt generated by positor/{0}, {1}".format(
-                __version__, JsonPositions.get_stt_format(absolute))]
+                __version__, schema)]
             grouped_by_line: List[List[SttWord]] = [list(result) for key, result in 
-                groupby(sttwords.get_words(), key=lambda word: word.line_number)]
+                groupby(sttwords.get_words(), key=lambda word: word.line_index)]
             for i, line in enumerate(grouped_by_line):
                 first_word = line[0]
                 contents.append("{0}\n{1} --> {2}\n{3}".format(

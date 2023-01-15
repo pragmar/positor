@@ -1,20 +1,7 @@
 import os
 
 class JsonPositions:
-
-    @staticmethod
-    def __get_json_format(extractor: str, condensed: bool, absolute: bool) -> str:
-        """
-        Utility reusable, returns json output code.
-        @absolute - use absolute positions
-        """
-        # default is *, or the broader data response
-        format_id = "*"
-        if condensed == True:
-            # condensed options, % 0.XXXX, # XXXX
-            format_id = "#" if absolute else "%"
-        return "{0}{1}".format(extractor, format_id)
-
+    
     @staticmethod
     def __get_common_json(file_name: str, extractor: str, condensed: bool, absolute: bool, positor_version: str) -> dict:
         """
@@ -26,7 +13,7 @@ class JsonPositions:
         return {
             "__meta__": {
                 "application":"positor/{0}".format(positor_version),
-                "schema": JsonPositions.__get_json_format(extractor, condensed, absolute),
+                "schema": JsonPositions.get_json_format(extractor, condensed, absolute),
                 "source": {
                     "name": os.path.basename(file_name),
                 }
@@ -34,6 +21,19 @@ class JsonPositions:
             "text": "",
             "positions": [],
         }
+
+    @staticmethod
+    def get_json_format(extractor: str, condensed: bool, absolute: bool) -> str:
+        """
+        Utility reusable, returns json output code.
+        @absolute - use absolute positions
+        """
+        # default is *, or the broader data response
+        format_id = "*"
+        if condensed == True:
+            # condensed options, % 0.XXXX, # XXXX
+            format_id = "#" if absolute else "%"
+        return "{0}{1}".format(extractor, format_id)
 
     @staticmethod
     def get_stt_json(file_name, duration, condensed, absolute, positor_version) -> dict:

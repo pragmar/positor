@@ -47,20 +47,10 @@ class WordBase:
     def index(self) -> int:
         return self._index
     
-    #@property
-    #def number(self) -> int:
-    #    return self._index + 1
-
     @property
     def line_index(self) -> int:
         return self._line_index
-
-    @property
-    def line_number(self) -> int:
-        return self._line_index + 1
     
-
-
 class WordsBase:
     """
     a collection of Words with positions, pulled from stt/ocr. this is the 
@@ -88,13 +78,6 @@ class WordsBase:
         this may be an SttLine instances or something else.
         """
         return self._lines
-    
-    # def get_lines_count(self) -> int:
-    #     """ 
-    #     returns the complete list of Any instances representing lines.
-    #     this may be an SttLine instances or something else.
-    #     """
-    #     return len(self._lines)
     
     def get_all_text(self, lowercase: bool = False) -> str:
         """ 
@@ -131,7 +114,6 @@ class OcrWord(WordBase):
                  confidence=None, line_number=None, block_number=None, 
                  paragraph_number=None):
 
-        
         assert top <= bottom and right >= left
 
         # initialize indexes, normalize the ocr line number to 0-based index
@@ -228,7 +210,7 @@ class OcrWords(WordsBase):
         bottom: int = top + int(row["height"])
         left: int = int(row["left"])
         right: int = left + int(row["height"])
-        # getting into ocr engnine specific values
+        # getting into ocr engine specific values
         confidence: float = row["conf"]
         line_number: int = row["line_num"]
         block_number: int = row["block_num"]
@@ -287,14 +269,16 @@ class SttLine():
     """
     a group of Words (subtitles style), as provided from whisper.
     Used to keep timings anchored while reordering timestamps.
+    Index is engine-agnostic line number, zero-based. The number game
+    is a quagmire, 0-based, 1-based, it'll never be consistent across
+    different 3rd party libs, so normalize to _index/0,1,2,... alter at 
+    output stage, if need be.
     """
     def __init__(self, words: WordsBase, start: float, end: float):
         self._words: float = words
         self._start: float = start
         self._end: float = end
         self._index: int = len(words.get_lines())
-        # self._number = self._index + 1
-        
     
     @property
     def start(self) -> float:
@@ -307,10 +291,6 @@ class SttLine():
     @property
     def index(self) -> int:
         return self._index
-    
-    # @property
-    # def number(self) -> int:
-    #     return self._index + 1
 
 class SttWord(WordBase):
     """
@@ -542,7 +522,6 @@ class SttWords(WordsBase):
             line_segment_word_partials_count = len(line_segment_word_partials)
             line = SttLine(self, line_segment["start"], line_segment["end"])
             self._lines.append(line)
-            
 
             # loop over word partials, some only contain punctuation
             for j, line_segment_word_partial in enumerate(line_segment_word_partials):
@@ -562,7 +541,6 @@ class SttWords(WordsBase):
                     # extend is destructive. it combines the text
                     # it adds trailing punctuation to the preceding word
                     current_word.extend(text, timestamps, override)
-                    # print("{0} {1}".format(current_word, text))
             
         self._sequence()
     
@@ -602,6 +580,7 @@ class SttWords(WordsBase):
         """
         reorders word timestamps to make sure the are sequential (>= last word)
         """
+
         # get all words, then separate into lists by line_index
         words: List[SttWord] = self.get_words()
         grouped_by_line: List[List[SttWord]] = [list(result) for key, result in groupby(words, key=lambda word: word.line_index)]
@@ -613,8 +592,8 @@ class SttWords(WordsBase):
         # timestamps are unpredictable, not necessarilly sequential, this reorders the start/end
         # so at least word1.start >= word1.end >= word2.start >= word2.start is true, and so forth.
         # that, and being within line start/end is the only thing you can depend on. some data gets 
-        # pretty knarly (>5 second distributions and such). reel it back on into the real world.
-        # you must first understad what WordBoundaryOverride is to understand the flow.
+        # pretty knarly (>5 second distributions for one word, and such). reel it back on into the 
+        # real world. you must first understad what WordBoundaryOverride is, to understand the flow.
         for line_of_words in grouped_by_line:
             accumulated_rejects: List[SttWord] = []
             for word in line_of_words:
