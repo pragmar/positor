@@ -4,11 +4,11 @@ import tempfile
 import uuid
 import subprocess
 import re
-import piexif
-from typing import List, Tuple
 import lzstring
-from PIL import Image, features
 import exiv2
+from typing import List, Tuple
+from PIL import Image, features
+
 
 class MetaImage:
     """
