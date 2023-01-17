@@ -254,9 +254,20 @@ class OcrWords(WordsBase):
                 # create dict from header labels, confidence is float
                 row_object = { labels[j]: self._get_tesseract_value(labels[j], value) for 
                     j, value in enumerate(values) }
+                
                 # skip non-texual information
                 if row_object["conf"] == -1 or row_object["text"].strip() == "":
                     continue
+
+                # skip noise. tiny, tiny boxes of garbage. it's a problem on 
+                # xeroxy-looking images with scan grain.
+                # box less than 5px (2x2 pixel box or less) is going to 
+                # be illegible and useless 99.9999% of the time
+                box_area = (row_object["right"] - row_object["left"]) * \
+                    (row_object["bottom"] - row_object["top"]);
+                if box_area < 5.0:
+                    continue
+
                 # additional skip filters go here
                 # otherwise, passes muster, in you go
                 self._add_word(row_object)

@@ -32,6 +32,7 @@ setup(
         "console_scripts": ['positor = positor.positor:main']
     },
     install_requires=[
+      "exiv2>=0.11.0",
       "torch==1.11.0", # latest torch has issues with whisper
       "colorama>=0.4.0", 
       "whisper.ai>=1.0.0"

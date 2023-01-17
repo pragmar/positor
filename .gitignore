@@ -16,8 +16,10 @@ __pycache__/
 *.m4a
 *.mp4
 *.png
+*.webp
 
-# Distribution / packaging
+
+# distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -40,4 +42,7 @@ bin/
 *.ico
 *_cx.py
 MANIFEST
+
+# miscellaneous
 clutter/
+*.sfk
