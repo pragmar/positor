@@ -39,7 +39,7 @@ except ImportError:
     warnings.filterwarnings(action="ignore", category=UserWarning)
     positor_env = LibContext.Packaged
 
-ACCEPTED_OCR_INPUT_EXTENSIONS: Tuple[str] = (".bmp", ".png", ".jpg", ".jpeg", ".gif", ".tiff")
+ACCEPTED_OCR_INPUT_EXTENSIONS: Tuple[str] = (".bmp", ".png", ".jpg", ".jpeg", ".gif", ".tif", ".tiff")
 ACCEPTED_OCR_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".csv", ".tsv", ".json", ".webp")
 ACCEPTED_STT_INPUT_EXTENSIONS: Tuple[str] = (".wav", ".mp3", ".mp4", ".m4a")
 ACCEPTED_STT_OUTPUT_EXTENSIONS: Tuple[str] = (".txt", ".csv", ".json", ".vtt", ".srt", ".webp")
@@ -73,12 +73,12 @@ def main():
     parser.add_argument("-l", "--tesseract-language", help="tesseract language code, ocr-only", type=str, default="eng")
     parser.add_argument("-d", "--tesseract-directory", help="folder containing tesseract language packs, ocr-only", type=str)
     parser.add_argument("-g", "--json-lowercase", help="lowercase text in json output", action="store_true")
-    parser.add_argument("-c", "--json-condensed", help="condensed data-structure json output (for client-side)", action="store_true")
+    parser.add_argument("-c", "--json-condensed", help="condensed data-structure json output, for client-side", action="store_true")
     parser.add_argument("-a", "--json-condensed-absolute", help="condensed, but with absolute positions", action="store_true")
     parser.add_argument("-v", "--version", help="print version information", action="store_true")
     parser.add_argument("-x", "--verbose", help="print sometimes helpful information to stdout", action="store_true")
     #parser.add_argument("-f", "--fp16", action="store_true", help="half-precision floating point")
-    parser.add_argument("outfile", help="*.txt, *.csv, *.json, *.vtt (stt), *.srt (stt), *.tsv (ocr)", nargs="?", type=str)
+    parser.add_argument("outfile", help="*.txt, *.csv, *.json, *.webp, *.vtt (stt), *.srt (stt), *.tsv (ocr)", nargs="?", type=str)
     parser.add_argument("outfile2", help="optional, additional outfile", nargs="?", type=str)
     parser.add_argument("outfile3", help="optional, additional outfile", nargs="?", type=str)
     parser.add_argument("outfile4", help="optional, additional outfile", nargs="?", type=str)
@@ -170,6 +170,9 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
         __error_and_exit("OCR support is disabled because Tesseract OCR is not installed. To enable, " +
         "either install Tesseract, or install positor via an installer available at https://pragmar.com/positor")
     
+    # track how long the process takes
+    timer_start = datetime.datetime.utcnow()
+
     # will exit, prior to loading modules (fast), if anything is off
     filtered_outfiles: List[str] = __filter_outfiles(outfiles, ACCEPTED_OCR_OUTPUT_EXTENSIONS)
 
@@ -181,11 +184,9 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
     # sort of odd use of command line, one bool greater than the next
     is_condensed: bool = condensed or absolute_condensed
     is_absolute: bool = absolute_condensed
-
-    # TODO the language/lang code dance here, echo back to user about tessdata=...
-    # consider mapping eng to en etc. even though stt side doesn't use it?
-    # override and language pack downloads at https://github.com/tesseract-ocr/tessdata
     
+    # consider mapping eng to en etc. even though stt side doesn't use it?
+    # override and language pack downloads at https://github.com/tesseract-ocr/tessdata    
     tempdir: tempfile.TemporaryDirectory = tempfile.TemporaryDirectory(prefix="positor_")
     tmpfile_stub = os.path.join(tempdir.name, uuid.uuid4().hex)
     tmpfile = "{0}.tsv".format(tmpfile_stub)
@@ -194,6 +195,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
     # these can also be extended to multiple, e.g. eng+spa. more complicated than it looks
     language = language if language is not None else "eng"
     # --oem 1, neural net over legacy ocr engine
+    # -c thresholding_method=2 is Sauvola binarization over Otsu (legacy)
     # https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html
     tesseract_command = ["tesseract", infile, tmpfile_stub, "--oem", "1", "-l", language, "tsv"]
     if tessdata is not None:
@@ -231,8 +233,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
             with io.open(outfile,"w", encoding="utf-8") as out:
                 out.write(text)
         elif outfile_ext == ".webp":
-            ocr_json = JsonPositions.get_ocr_json(text, ocrwords, infile, input_width, 
-                    input_height, is_condensed, is_absolute, __version__)
+            ocr_json = JsonPositions.get_ocr_json(text, ocrwords, infile, is_condensed, is_absolute, __version__)
             MetaImageSource.export_webp(infile, outfile, json.dumps(ocr_json))
         elif outfile_ext == ".tsv":
             with io.open(outfile,"w", encoding="utf-8") as out:
@@ -243,7 +244,7 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
                 out.write(json.dumps(ocr_json))
         elif outfile_ext == ".csv":
             # get dims, assert non-zero (we're dividing)
-            input_width, input_height = get_infile_dimensions(infile)
+            input_width, input_height = JsonPositions.__get_infile_dimensions(infile)
             lines = ["text,top,right,bottom,left,#image_width:{0},#image_height:{1}".format(input_width, input_height)]
             for word in ocrwords.get_words():
                 word_text: str = word.text
@@ -256,6 +257,14 @@ def ocr(infile: str, outfiles: list[str], whisper_model: str, condensed=False, l
         else:
             raise ValueError("Unsupported output ext. ({0})".format(outfile))
 
+    # or to get token timestamps that adhere more to the top prediction
+    if verbose:
+        delta = datetime.datetime.utcnow() - timer_start
+        print("Processing Time: {0}".format(delta))
+        print("Text:")
+        print(ocrwords.get_all_text())
+        print("")
+
 def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False, 
         lowercase=False, absolute_condensed=False, verbose=False):
     
@@ -267,6 +276,9 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
     from .stt_word_level import load_model
     from .positions import JsonPositions, CaptionPositions
     from .images import MetaImageWaveform
+
+    # track how long the process takes
+    timer_start = datetime.datetime.utcnow()
 
     # these command options stack on one another
     is_condensed: bool = condensed or absolute_condensed
@@ -351,6 +363,9 @@ def stt(infile: str, outfiles: List[str], whisper_model: str, condensed=False,
 
     # or to get token timestamps that adhere more to the top prediction
     if verbose:
+        delta = datetime.datetime.utcnow() - timer_start
+        print("Processing Time: {0}".format(delta))
+        print("Text:")
         print(sttwords.get_all_text())
         print("\nPositions:\n")
         for word in sttwords.get_words():

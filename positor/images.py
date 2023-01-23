@@ -18,26 +18,28 @@ class MetaImage:
     def _validate_or_raise(infile, outfile):
         # check for webp, bail if necessary
         has_webp: bool = features.check("webp")
-        has_exif: bool = features.check_feature("webp_mux")
-        if False in (has_webp, has_exif):
-            raise EnvironmentError("Either libwebp/webp_mux is not installed on this system, or Pillow was built without support.")
+        # if pil exif is viable down the road, this is necessary
+        # has_exif: bool = features.check_feature("webp_mux")
+        # if False in (has_webp, has_exif):
+        if has_webp == False:
+            raise EnvironmentError("Either libwebp is not installed on this " +
+                    "system, or Pillow was built without support.")
         if infile is None or not os.path.exists(infile):
             raise IOError("File not provided, or doesn't exist. ({0})".format(infile))
         if os.path.splitext(outfile)[1].lower() != ".webp":
-            raise IOError("Outfile is not a .webp. ({0})".format(outfile))
+            raise ValueError("Outfile is not a .webp. ({0})".format(outfile))
     
     @staticmethod
     def _tag_image(outfile: str, positor_json: str):
         # add positor json to webp metadata (exif2)
-        # webp usercomment, i think, can store upwards of 90k, whatever
+        # webp usercomment, i think, can store upwards of 90kb, whatever
         # it is, it's pretty near inexhausable for --json-condensed
         lz = lzstring.LZString()
         compressed_positor_comment_b64 = lz.compressToBase64(positor_json)
 
-        # eat stdout/stderr, otherwise stderr:
+        # eat stderr, otherwise:
         # Exif.Photo.UserComment: changed type from 'Comment' to 'Undefined'.
         # everything works though
-        sys.stdout = open(os.devnull, 'w')
         sys.stderr = open(os.devnull, 'w')
 
         # if I could get PIL exif to work, I'd use that
@@ -51,8 +53,7 @@ class MetaImage:
         data["Exif.Photo.UserComment"] = ("charset=Ascii {0}".format(compressed_positor_comment_b64))
         image.writeMetadata()
 
-        # reconnect stdout/stderr
-        sys.stdout = sys.__stdout__
+        # reconnect stderr
         sys.stderr = sys.__stderr__
 
 class MetaImageSource(MetaImage):
@@ -107,8 +108,10 @@ class MetaImageWaveform(MetaImage):
 
         # convert to webp, export to outfile
         waveform_source = Image.open(tmpfile)
-        waveform_source = waveform_source.convert("P", palette=Image.ADAPTIVE, colors=256)
-        waveform_source.save(outfile, "webp", lossless=True, method=6, quality=100, exact=True)
+        rgba_waveform_source = waveform_source.convert("RGBA")
+        
+        # waveform_source = waveform_source.convert("P", palette=Image.ADAPTIVE, colors=256)
+        rgba_waveform_source.save(outfile, "webp", lossless=True, method=6, quality=100, exact=True)
         waveform_source.close()
 
         # we're done with the png used to generated the webp

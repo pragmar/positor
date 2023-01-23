@@ -140,8 +140,8 @@ class JsonPositions:
         """
         input_width, input_height = JsonPositions.__get_infile_dimensions(infile)
         ocr_json = JsonPositions.__get_common_json(infile, "ocr", condensed, absolute, positor_version)
-        ocr_json["__meta__"]["source"]["width"] = width
-        ocr_json["__meta__"]["source"]["height"] = height
+        ocr_json["__meta__"]["source"]["width"] = input_width
+        ocr_json["__meta__"]["source"]["height"] = input_height
         ocr_json["text"] = text
         words = ocrwords.get_words()
         words_count:int = len(words)
@@ -167,7 +167,7 @@ class JsonPositions:
                     # "_block_number": word._block_number,
                     # "_paragraph_number": word._paragraph_number,
                 })
-            elif absolute_condensed == True:
+            elif absolute == True:
                 # tradition here is css: clockwise from 12, top, right, bottom, left
                 ocr_json["positions"].append([word.top, word.right, word.bottom, word.left])
             else:

@@ -19,7 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
+import os
 import warnings
 import numpy as np
 import torch
@@ -892,6 +892,25 @@ def load_model(name: str, device: Optional[Union[str, torch.device]] = None,
     model : Whisper
         The Whisper ASR model instance
     """
+
+    # jump out ahead and if it looks like a download will happen, alert user
+    # so it's not disorienting. user will not necessarilly expect a download
+    # and may get freaked out -- so just say what is happening
+    # this test lifted from whisper __init__.py
+    test_root = None
+    if download_root is None:
+        test_root = os.getenv(
+            "XDG_CACHE_HOME", 
+            os.path.join(os.path.expanduser("~"), ".cache", "whisper")
+        )
+    else:
+        test_root = download_root
+    download_target = os.path.join(test_root, os.path.basename(name))
+    if not os.path.isfile(download_target):
+        # alert user that model is what is being downloaded
+        print("Downloading Whisper/STT model '{0}'".format(name))
+
+    # back to business
     model = load_ori_model(name, device=device, download_root=download_root, in_memory=in_memory)
     modify_model(model)
     return model

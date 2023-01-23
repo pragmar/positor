@@ -23,7 +23,7 @@ setup(
     description="Utilities for digital archives.",
     long_description=read_me(),
     long_description_content_type='text/markdown',
-    python_requires=">=3.9",
+    python_requires=">=3.9,<3.11",
     author="pragmar",
     url="https://github.com/pragmar/positor",
     license="MIT",
@@ -31,9 +31,16 @@ setup(
     entry_points = {
         "console_scripts": ['positor = positor.positor:main']
     },
+    # inherits from whisper.ai torch/numpy, issues with exisiting libs?
+    # newer torch with older numpy seems to be one culprit
+    # known good configurations:
+    # - numpy [required: Any, installed: 1.22.4]
+    # - torch [required: Any, installed: 1.11.0]
+    # and latest of each (as of 1/22/23) works
+    # - numpy [required: Any, installed: 1.24.1]
+    # - torch [required: Any, installed: 1.13.1]
     install_requires=[
       "exiv2>=0.11.0",
-      "torch==1.11.0", # latest torch has issues with whisper
       "colorama>=0.4.0", 
       "whisper.ai>=1.0.0"
     ],

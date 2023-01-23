@@ -209,7 +209,7 @@ class OcrWords(WordsBase):
         top: int = int(row["top"])
         bottom: int = top + int(row["height"])
         left: int = int(row["left"])
-        right: int = left + int(row["height"])
+        right: int = left + int(row["width"])
         # getting into ocr engine specific values
         confidence: float = row["conf"]
         line_number: int = row["line_num"]
@@ -263,11 +263,9 @@ class OcrWords(WordsBase):
                 # xeroxy-looking images with scan grain.
                 # box less than 5px (2x2 pixel box or less) is going to 
                 # be illegible and useless 99.9999% of the time
-                box_area = (row_object["right"] - row_object["left"]) * \
-                    (row_object["bottom"] - row_object["top"]);
+                box_area = int(row_object["width"]) * int(row_object["height"])
                 if box_area < 5.0:
                     continue
-
                 # additional skip filters go here
                 # otherwise, passes muster, in you go
                 self._add_word(row_object)
@@ -554,6 +552,43 @@ class SttWords(WordsBase):
                     current_word.extend(text, timestamps, override)
             
         self._sequence()
+        self._spread_timestamps()
+
+    def _spread_timestamps(self):
+        """
+        start/ends are the same position/duration. they come out of whisper 
+        as an average position. so give them the natural spread insinuated 
+        by the space to the next word position. in the case of line-endings, 
+        push the opposite way, into preceding word. treat line boundaries as
+        immovable. do ends first, then everything else.  
+        """
+        # max spread is 1/3 second
+        max_spread = 0.334 
+        words_line_ends: List[SttWord] = [w for w in self.get_words() if w.boundary_override == WordBoundaryOverride.LineEnd]
+        words_not_line_ends: List[SttWord] = [w for w in self.get_words() if w.boundary_override != WordBoundaryOverride.LineEnd]
+        for word in words_line_ends:
+            preceding_word = word.previous()
+            if preceding_word is not None and preceding_word.start < word.start:
+                # the way the end of the line works, it correlates to pauses.
+                # splitting the difference is an overly conservatives
+                # number. spread_start places the end of line word one max
+                # spread after the preceeding word, which is also conservative
+                # and also more likely due to the way line ends trend towards
+                # audio gaps
+                difference_between_words = word.start - preceding_word.start
+                spread_start = preceding_word.start + max_spread
+                split_the_diff_start = difference_between_words/2.0
+                best_start = min(spread_start, split_the_diff_start)
+                nudge = min(best_start, max_spread)
+                updated_start = word.start - nudge
+                word.update_boundary(updated_start, word.end, word.boundary_override)
+        for word in words_not_line_ends:
+            next_word = word.next()
+            if next_word is not None and next_word.start > word.start:
+                difference_between_words = next_word.start - word.start
+                nudge = min(difference_between_words, max_spread)
+                updated_end = word.end + nudge
+                word.update_boundary(word.start, updated_end, word.boundary_override)
     
     def _splice_times(self, out_of_order_group: List[SttWord]):
         """
