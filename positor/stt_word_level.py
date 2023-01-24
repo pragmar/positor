@@ -23,7 +23,7 @@ import os
 import warnings
 import numpy as np
 import torch
-
+from urllib.parse import urlparse
 from types import MethodType
 from itertools import repeat
 from torch import Tensor
@@ -38,11 +38,10 @@ from whisper.utils import exact_div, format_timestamp, compression_ratio
 from whisper.model import Whisper
 from whisper.decoding import DecodingTask, BeamSearchDecoder, GreedyDecoder
 from whisper.tokenizer import Tokenizer, get_tokenizer
+from whisper import _MODELS
 from tqdm import tqdm
 from .stt_audio import load_audio_waveform_img, remove_lower_quantile, wave_to_ts_filter
 from .stt_stabilization import stabilize_timestamps, add_whole_word_ts
-
-
 
 __all__ = ['transcribe_word_level', 'decode_word_level', 'modify_model', 'load_model']
 
@@ -905,10 +904,15 @@ def load_model(name: str, device: Optional[Union[str, torch.device]] = None,
         )
     else:
         test_root = download_root
-    download_target = os.path.join(test_root, os.path.basename(name))
-    if not os.path.isfile(download_target):
-        # alert user that model is what is being downloaded
-        print("Downloading Whisper/STT model '{0}'".format(name))
+    
+    if name in _MODELS:
+        hit = _MODELS[name]
+        parsed = urlparse(hit)
+        target_filename = os.path.basename(parsed.path)
+        target_filepath = os.path.join(test_root, target_filename)
+        if not os.path.isfile(target_filepath):
+            # alert user that model is what is being downloaded
+            print("Downloading Whisper/STT model '{0}'".format(name))
 
     # back to business
     model = load_ori_model(name, device=device, download_root=download_root, in_memory=in_memory)

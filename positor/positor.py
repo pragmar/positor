@@ -96,7 +96,7 @@ def main():
         sys.stderr.write(
             "\n".join([
                 "positor v{0} (whisper/{1}{2})".format(__version__, __whisper_version__, add_tesseract),
-                "Speech to data. Infile must contain one (definitive) audio stream.",
+                "STT/OCR extractor.",
                 "usage: {0}".format(usage()),
                 "",
                 "{0}Use -h for help.{1}".format(Fore.YELLOW, Style.RESET_ALL)
